@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <File Path="src/.dockerignore" />
+    <File Path="src/docker-compose.yml" />
+    <Project Path="src/PitchReserve.Api/PitchReserve.Api.csproj" />
+    <Project Path="src/PitchReserve.Application/PitchReserve.Application.csproj" />
+    <Project Path="src/PitchReserve.Domain/PitchReserve.Domain.csproj" />
+    <Project Path="src/PitchReserve.Infrastructure/PitchReserve.Infrastructure.csproj" />
+  </Folder>
+</Solution>
