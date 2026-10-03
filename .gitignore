@@ -133,3 +133,7 @@ ehthumbs.db
 *.tmp
 *.swp
 *#*
+
+# Local diagnostic logs
+**/logs/
+*.clef

@@ -1,7 +1,7 @@
 From mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-COPY ["PitchReserve.Api/PictchReserve.Api.csproj", "PitchReserve.Api/"]
+COPY ["PitchReserve.Api/PitchReserve.Api.csproj", "PitchReserve.Api/"]
 COPY ["PitchReserve.Application/PitchReserve.Application.csproj", "PitchReserve.Application/"]
 COPY ["PitchReserve.Domain/PitchReserve.Domain.csproj", "PitchReserve.Domain/"]
 COPY ["PitchReserve.Infrastructure/PitchReserve.Infrastructure.csproj", "PitchReserve.Infrastructure/"]
