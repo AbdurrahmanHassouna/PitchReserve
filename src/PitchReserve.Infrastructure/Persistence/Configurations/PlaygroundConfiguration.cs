@@ -12,6 +12,9 @@ public class PlaygroundConfiguration : IEntityTypeConfiguration<Playground>
 
         builder.HasKey(p => p.Id);
 
+        builder.Property(p => p.RowVersion)
+            .IsRowVersion();
+
         builder.Property(p => p.Name)
             .IsRequired()
             .HasMaxLength(150);
@@ -76,6 +79,6 @@ public class PlaygroundConfiguration : IEntityTypeConfiguration<Playground>
         builder.HasMany(p => p.Reviews)
             .WithOne(r => r.Playground)
             .HasForeignKey(r => r.PlaygroundId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

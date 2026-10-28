@@ -77,6 +77,13 @@ public class User : BaseEntity
         PhoneNumber = phoneNumber?.Trim();
     }
 
+    public void UpdatePhoneNumber(string phoneNumber)
+    {
+        if (string.IsNullOrWhiteSpace(phoneNumber) || phoneNumber.Trim().Length > 30)
+            throw new DomainException("A valid phone number is required.");
+        PhoneNumber = phoneNumber.Trim();
+    }
+
     public void UpdatePasswordHash(string passwordHash)
     {
         if (string.IsNullOrWhiteSpace(passwordHash))

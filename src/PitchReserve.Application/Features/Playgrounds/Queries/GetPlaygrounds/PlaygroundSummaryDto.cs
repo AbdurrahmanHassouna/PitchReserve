@@ -13,4 +13,5 @@ public record PlaygroundSummaryDto
     public TimeOnly OpenHour { get; init; }
     public TimeOnly CloseHour { get; init; }
     public decimal AverageRating { get; init; }
+    public PlaygroundStatus Status { get; init; }
 }

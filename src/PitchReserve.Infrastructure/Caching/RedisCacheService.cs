@@ -24,41 +24,6 @@ public class RedisCacheService : ICacheService
         _logger = logger;
     }
 
-    public Task<bool> TryAcquireLockAsync(string key, string token, TimeSpan expiration,
-        CancellationToken cancellationToken = default)
-    {
-        ValidateLockArguments(key, token);
-        ValidateExpiration(expiration);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        return _connectionMultiplexer.GetDatabase().LockTakeAsync(key, token, expiration);
-    }
-
-    public Task<bool> ExtendLockAsync(string key, string token, TimeSpan expiration,
-        CancellationToken cancellationToken = default)
-    {
-        ValidateLockArguments(key, token);
-        ValidateExpiration(expiration);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        return _connectionMultiplexer.GetDatabase().LockExtendAsync(key, token, expiration);
-    }
-
-    public Task<bool> ReleaseLockAsync(string key, string token,
-        CancellationToken cancellationToken = default)
-    {
-        ValidateLockArguments(key, token);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        return _connectionMultiplexer.GetDatabase().LockReleaseAsync(key, token);
-    }
-
-    private static void ValidateLockArguments(string key, string token)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        ArgumentException.ThrowIfNullOrWhiteSpace(token);
-    }
-
     private static void ValidateExpiration(TimeSpan expiration)
     {
         if (expiration < TimeSpan.FromMilliseconds(1))
@@ -144,7 +109,7 @@ public class RedisCacheService : ICacheService
                 var server = _connectionMultiplexer.GetServer(endpoint);
                 if (server.IsConnected)
                 {
-                    var keys =  server.KeysAsync(pattern: $"{prefixKey}*");
+                    var keys = server.KeysAsync(pattern: $"{prefixKey}*");
                     var keyBatch = new List<RedisKey>();
                     await foreach (var key in keys.WithCancellation(cancellationToken))
                     {

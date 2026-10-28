@@ -8,7 +8,7 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
 {
     public void Configure(EntityTypeBuilder<Booking> builder)
     {
-        builder.ToTable("Bookings",table => table.HasCheckConstraint(
+        builder.ToTable("Bookings", table => table.HasCheckConstraint(
             "CK_Bookings_ParticipantCapacity",
             """
             [JoinedParticipantsCount] >= 0
@@ -19,6 +19,9 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
             """));
 
         builder.HasKey(b => b.Id);
+        builder.Property(b => b.RowVersion).IsRowVersion();
+        builder.Property(b => b.CancellationReason).HasMaxLength(500);
+        builder.HasIndex(b => new { b.PlaygroundId, b.StartTime, b.EndTime });
 
         builder.Property(b => b.StartTime)
             .IsRequired();

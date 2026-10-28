@@ -26,12 +26,13 @@ public class Review : BaseEntity
         if (rating < 1 || rating > 5)
             throw new DomainException("Rating must be between 1 and 5 stars.");
 
+        var normalizedComment = comment?.Trim();
         return new Review
         {
             PlaygroundId = playgroundId,
             PlayerId = playerId,
             Rating = rating,
-            Comment = comment?.Trim()
+            Comment = string.IsNullOrEmpty(normalizedComment) ? null : normalizedComment
         };
     }
 

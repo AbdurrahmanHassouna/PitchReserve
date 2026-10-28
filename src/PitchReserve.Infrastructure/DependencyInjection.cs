@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using PitchReserve.Application.Common.Interfaces;
+using PitchReserve.Application.Common.Services;
 using PitchReserve.Infrastructure.Authentication;
 using PitchReserve.Infrastructure.Caching;
 using PitchReserve.Infrastructure.Common;
@@ -18,9 +19,11 @@ public static class DependencyInjection
             options.UseSqlServer(
                 configuration.GetConnectionString("DefaultConnection"),
                 b => b.MigrationsAssembly(typeof(PitchReserveDbContext).Assembly.FullName)));
-
         services.AddScoped<IApplicationDbContext>(provider =>
             provider.GetRequiredService<PitchReserveDbContext>());
+
+        services.AddScoped<ITransactionCoordinator, SqlServerTransactionCoordinator>();
+        services.AddScoped<IBookingScheduleValidator, BookingScheduleValidator>();
 
         var redisConnectionString = configuration.GetConnectionString("Redis")
             ?? configuration["Redis:ConnectionString"]

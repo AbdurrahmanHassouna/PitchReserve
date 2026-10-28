@@ -5,7 +5,6 @@ namespace PitchReserve.Application.Features.Playgrounds.Commands.CreatePlaygroun
 
 public record CreatePlaygroundCommand : IRequest<Guid>
 {
-    public Guid OwnerProfileId { get; init; }
     public string Name { get; init; } = string.Empty;
     public PitchSize Size { get; init; }
     public SurfaceType SurfaceType { get; init; }

@@ -13,9 +13,6 @@ using PitchReserve.Application.Features.Users.Queries.GetCurrentUser;
 public class AuthController : ApiControllerBase
 {
     [HttpPost("register")]
-    [ProducesResponseType(typeof(Result<AuthResponseDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<Result<AuthResponseDto>>> Register([FromBody] RegisterUserCommand command)
     {
         var result = await Mediator.Send(command);
@@ -23,9 +20,6 @@ public class AuthController : ApiControllerBase
     }
 
     [HttpPost("login")]
-    [ProducesResponseType(typeof(Result<AuthResponseDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<Result<AuthResponseDto>>> Login([FromBody] LoginCommand command)
     {
         var result = await Mediator.Send(command);
@@ -34,9 +28,6 @@ public class AuthController : ApiControllerBase
 
     [Authorize]
     [HttpGet("me")]
-    [ProducesResponseType(typeof(Result<CurrentUserDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<Result<CurrentUserDto>>> GetCurrentUser()
     {
         var result = await Mediator.Send(new GetCurrentUserQuery());

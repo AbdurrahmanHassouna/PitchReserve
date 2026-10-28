@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PitchReserve.Application.Common.Interfaces;
 using PitchReserve.Domain.Entities;
+using PitchReserve.Domain.Enums;
 using PitchReserve.Domain.Exceptions;
 
 namespace PitchReserve.Application.Features.Playgrounds.Queries.GetPlaygroundById;
@@ -21,16 +22,10 @@ public class GetPlaygroundByIdQueryHandler : IRequestHandler<GetPlaygroundByIdQu
     {
         var cacheKey = $"playground:{request.Id}";
 
-        var cachedPlayground = await _cacheService.GetAsync<PlaygroundDto>(cacheKey, cancellationToken);
-        if (cachedPlayground is not null)
-        {
-            return cachedPlayground;
-        }
-
         var playground = await _context.Playgrounds
             .AsNoTracking()
             .Include(p => p.OwnerProfile)
-            .FirstOrDefaultAsync(p => p.Id == request.Id, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Id == request.Id && p.Status != PlaygroundStatus.Inactive, cancellationToken);
 
         if (playground is null)
         {
@@ -54,9 +49,14 @@ public class GetPlaygroundByIdQueryHandler : IRequestHandler<GetPlaygroundByIdQu
             CloseHour = playground.CloseHour,
             AverageRating = playground.AverageRating,
             TotalRatings = playground.TotalRatings,
+            Status = playground.Status,
             CreatedAt = playground.CreatedAt,
-            OnlinePaymentEnabled = playground.OwnerProfile.OnlinePaymentEnabled
+            OnlinePaymentEnabled = playground.OwnerProfile?.OnlinePaymentEnabled ?? false
         };
+
+        var cachedPlayground = await _cacheService.GetAsync<PlaygroundDto>(cacheKey, cancellationToken);
+        if (cachedPlayground is not null && cachedPlayground.Status != PlaygroundStatus.Inactive)
+            return cachedPlayground with { Status = playground.Status };
 
         await _cacheService.SetAsync(cacheKey, dto, TimeSpan.FromMinutes(30), cancellationToken);
 

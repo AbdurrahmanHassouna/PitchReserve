@@ -1,6 +1,7 @@
-﻿using MediatR;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PitchReserve.Application.Common.Interfaces;
+using PitchReserve.Domain.Enums;
 
 namespace PitchReserve.Application.Features.Playgrounds.Queries.GetPlaygrounds;
 
@@ -21,10 +22,20 @@ public class GetPlaygroundsQueryHandler :  IRequestHandler<GetPlaygroundsQuery, 
         var cached = await _cacheService.GetAsync<IList<PlaygroundSummaryDto>>(key,cancellationToken);
         if (cached is not null)
         {
-            return cached;
+            var visibleFields = await _context.Playgrounds.AsNoTracking()
+                .Where(playground => playground.Status != PlaygroundStatus.Inactive)
+                .Select(playground => new { playground.Id, playground.Status })
+                .ToListAsync(cancellationToken);
+            var visibleStatuses = visibleFields.ToDictionary(playground => playground.Id, playground => playground.Status);
+            return cached
+                .Where(playground => visibleStatuses.ContainsKey(playground.Id))
+                .Select(playground => playground with { Status = visibleStatuses[playground.Id] })
+                .ToList();
         }
 
-        var playgrounds = await _context.Playgrounds.Select(playground => new PlaygroundSummaryDto()
+        var playgrounds = await _context.Playgrounds.AsNoTracking()
+            .Where(playground => playground.Status != PlaygroundStatus.Inactive)
+            .Select(playground => new PlaygroundSummaryDto()
         {
             Id = playground.Id,
             SurfaceType =  playground.SurfaceType,
@@ -34,7 +45,8 @@ public class GetPlaygroundsQueryHandler :  IRequestHandler<GetPlaygroundsQuery, 
             CloseHour = playground.CloseHour,
             OpenHour = playground.OpenHour,
             Name =  playground.Name,
-            Size =  playground.Size
+            Size =  playground.Size,
+            Status = playground.Status
         }).ToListAsync(cancellationToken);
 
         await _cacheService.SetAsync(key, playgrounds,TimeSpan.FromMinutes(15), cancellationToken);

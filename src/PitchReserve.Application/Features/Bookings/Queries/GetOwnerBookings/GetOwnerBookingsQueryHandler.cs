@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using PitchReserve.Application.Common.Exceptions;
 using PitchReserve.Application.Common.Interfaces;
 using PitchReserve.Domain.Enums;
+using PitchReserve.Domain.Exceptions;
 
 namespace PitchReserve.Application.Features.Bookings.Queries.GetOwnerBookings;
 
@@ -10,36 +11,29 @@ public class GetOwnerBookingsQueryHandler : IRequestHandler<GetOwnerBookingsQuer
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUserService;
-    private readonly ICacheService _cacheService;
 
-    public GetOwnerBookingsQueryHandler(IApplicationDbContext context, ICurrentUserService currentUserService,
-        ICacheService cacheService)
+    public GetOwnerBookingsQueryHandler(IApplicationDbContext context, ICurrentUserService currentUserService)
     {
         _context = context;
         _currentUserService = currentUserService;
-        _cacheService = cacheService;
     }
 
     public async Task<List<OwnerBookingDto>> Handle(GetOwnerBookingsQuery request, CancellationToken cancellationToken)
     {
-
-        if (!_currentUserService.UserId.HasValue ||  _currentUserService.UserId.Value != request.OwnerUserId)
+        if (!_currentUserService.IsAuthenticated || !_currentUserService.UserId.HasValue)
         {
-            throw new ForbiddenAccessException("User must be authenticated to view owner bookings.");
+            throw new UnauthorizedAccessException("Authentication is required to view owner bookings.");
         }
 
-        var key = $"bookings:{_currentUserService.UserId}:{request.Status}:{request.PlaygroundId}";
-        var cachedBookings = await _cacheService.GetAsync<List<OwnerBookingDto>>(key, cancellationToken);
-        if (cachedBookings is not null)
+        if (!string.Equals(_currentUserService.Role, UserRole.Owner.ToString(), StringComparison.OrdinalIgnoreCase))
         {
-            return cachedBookings;
+            throw new ForbiddenAccessException("Only field owners can view owner bookings.");
         }
+
+        var ownerUserId = _currentUserService.UserId.Value;
         var query = _context.Bookings
-            .Include(b => b.Payment)
-            .Include(b => b.MatchParticipants)
-            .Include(b => b.Playground)
             .AsNoTracking()
-            .Where(b => b.Playground.OwnerProfile.UserId == _currentUserService.UserId);
+            .Where(b => b.Playground.OwnerProfile.UserId == ownerUserId);
 
         if (request.Status.HasValue)
         {
@@ -51,8 +45,9 @@ public class GetOwnerBookingsQueryHandler : IRequestHandler<GetOwnerBookingsQuer
             query = query.Where(b => b.PlaygroundId == request.PlaygroundId.Value);
         }
 
-        var bookings = await query
+        return await query
             .OrderByDescending(b => b.StartTime)
+            .ThenByDescending(b => b.Id)
             .Select(b => new OwnerBookingDto
             {
                 BookingId = b.Id,
@@ -65,15 +60,14 @@ public class GetOwnerBookingsQueryHandler : IRequestHandler<GetOwnerBookingsQuer
                 EndTime = b.EndTime,
                 Status = b.Status,
                 PaymentStatus = b.Payment.Status,
-                PaymentMethod =  b.Payment.Method,
-                PaymentAmount =  b.Payment.Amount ,
+                PaymentMethod = b.Payment.Method,
+                PaymentAmount = b.Payment.Amount,
                 TotalParticipants = b.MatchParticipants.Count,
-                JoinedParticipants = b.MatchParticipants.Count(m => m.Status ==ParticipantStatus.Joined),
+                JoinedParticipants = b.MatchParticipants.Count(m => m.Status == ParticipantStatus.Joined),
+                PendingParticipants = b.MatchParticipants.Count(m => m.Status == ParticipantStatus.Pending),
                 CreatedAt = b.CreatedAt,
                 BookingTime = b.BookingTime
             })
             .ToListAsync(cancellationToken);
-        await _cacheService.SetAsync(key, bookings,TimeSpan.FromMinutes(15),cancellationToken);
-        return bookings;
     }
 }

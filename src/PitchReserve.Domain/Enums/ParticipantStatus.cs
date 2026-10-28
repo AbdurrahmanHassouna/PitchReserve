@@ -4,5 +4,6 @@ public enum ParticipantStatus
 {
     Pending,
     Joined,
-    Declined
+    Declined,
+    Withdrawn
 }

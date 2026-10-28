@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using PitchReserve.Application.Common.Exceptions;
 using PitchReserve.Application.Common.Interfaces;
 using PitchReserve.Application.Common.Models;
+using PitchReserve.Application.Features.Bookings.Common;
 using PitchReserve.Domain.Entities;
 using PitchReserve.Domain.Enums;
 using PitchReserve.Domain.Exceptions;
@@ -34,41 +35,42 @@ public class ConfirmCashPaymentCollectionCommandHandler : IRequestHandler<Confir
 
     public async Task<Result> Handle(ConfirmCashPaymentCollectionCommand request, CancellationToken cancellationToken)
     {
-        var booking = await _context.Bookings
-            .Include(b => b.Payment)
-            .Include(b => b.Playground)
-                .ThenInclude(p => p.OwnerProfile)
-            .FirstOrDefaultAsync(b => b.Id == request.PaymentId ||  b.Payment.Id == request.PaymentId, cancellationToken);
+        var bookingId = await _context.Bookings.AsNoTracking()
+            .Where(b => b.Id == request.PaymentId || b.Payment.Id == request.PaymentId)
+            .Select(b => (Guid?)b.Id).FirstOrDefaultAsync(cancellationToken)
+            ?? throw new NotFoundException(nameof(Booking), request.PaymentId);
 
-        if (booking is null)
-        {
-            throw new NotFoundException(nameof(Booking), request.PaymentId);
-        }
+        var booking = await _context.Bookings.Include(b => b.Payment)
+            .Include(b => b.Playground).ThenInclude(p => p.OwnerProfile)
+            .FirstOrDefaultAsync(b => b.Id == bookingId, cancellationToken)
+            ?? throw new NotFoundException(nameof(Booking), request.PaymentId);
 
-        if ( !_currentUserService.UserId.HasValue || booking.Playground.OwnerProfile.UserId != _currentUserService.UserId)
-        {
+        if (_currentUserService.Role != "Owner" || !_currentUserService.UserId.HasValue ||
+            booking.Playground.OwnerProfile.UserId != _currentUserService.UserId)
             throw new ForbiddenAccessException("Only the playground owner can confirm cash payment collection.");
-        }
+        if (booking.Payment is null || booking.Payment.Method != PaymentMethod.CashOnArrival)
+            throw new ConflictException("This booking does not have a cash payment.");
+        if (booking.Status is not (BookingStatus.AcceptedAwaitingCash or BookingStatus.Confirmed))
+            throw new ConflictException("Accept the booking request before recording cash collection.");
 
-        var paidAt = request.PaidAt??DateTime.UtcNow;
-
-        booking.Payment.MarkAsPaid(paidAt);
+        booking.Payment.MarkAsPaid(request.PaidAt ?? _dateTimeProvider.UtcNow);
         booking.Confirm();
-
         await _context.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Cash payment confirmed and booking confirmed for Booking {BookingId}, Payment {PaymentId}, Playground {PlaygroundId}",
+            "Cash collected and booking confirmed for Booking {BookingId}, Payment {PaymentId}, Playground {PlaygroundId}",
             booking.Id,
             booking.Payment.Id,
             booking.PlaygroundId);
 
-        await _cacheService.RemoveAsync($"booking:{booking.Id}", CancellationToken.None);
-        await _cacheService.RemoveByPrefixAsync("bookings", CancellationToken.None);
-        await _cacheService.RemoveByPrefixAsync("payments", CancellationToken.None);
-        if (booking.PlaygroundId != Guid.Empty)
+        await BookingCacheInvalidator.InvalidateAsync(_cacheService, _logger, booking.PlaygroundId);
+        try
         {
-            await _cacheService.RemoveByPrefixAsync($"playgrounds:{booking.PlaygroundId}", CancellationToken.None);
+            await _cacheService.RemoveByPrefixAsync("payments", CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning("Payment cache invalidation failed with {ExceptionType}.", exception.GetType().Name);
         }
 
         return Result.Success();

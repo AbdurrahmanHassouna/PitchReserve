@@ -6,8 +6,6 @@ public class CreatePlaygroundCommandValidator : AbstractValidator<CreatePlaygrou
 {
     public CreatePlaygroundCommandValidator()
     {
-        RuleFor(x => x.OwnerProfileId)
-            .NotEmpty().WithMessage("Owner id is required.");
         RuleFor(x => x.Name)
             .NotEmpty().WithMessage("Playground name is required.")
             .MaximumLength(150).WithMessage("Playground name must not exceed 150 characters.");
@@ -32,5 +30,9 @@ public class CreatePlaygroundCommandValidator : AbstractValidator<CreatePlaygrou
         RuleFor(x => x.CloseHour)
             .Must((cmd, closeHour) => closeHour != cmd.OpenHour)
             .WithMessage("Close hour must not be equal to open hour.");
+
+        RuleFor(x => x.Status)
+            .Must(status => status is PitchReserve.Domain.Enums.PlaygroundStatus.Closed or PitchReserve.Domain.Enums.PlaygroundStatus.Opened)
+            .WithMessage("A new playground must be opened or closed.");
     }
 }

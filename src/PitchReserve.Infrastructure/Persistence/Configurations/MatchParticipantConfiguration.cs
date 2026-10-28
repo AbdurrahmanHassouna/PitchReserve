@@ -11,6 +11,7 @@ public class MatchParticipantConfiguration : IEntityTypeConfiguration<MatchParti
         builder.ToTable("MatchParticipants");
 
         builder.HasKey(m => m.Id);
+        builder.Property(m => m.RowVersion).IsRowVersion();
 
         builder.Property(m => m.Status)
             .HasConversion<string>()

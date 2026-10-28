@@ -1,7 +1,8 @@
-﻿namespace PitchReserve.Domain.Enums;
+namespace PitchReserve.Domain.Enums;
 
 public enum PlaygroundStatus
 {
     Closed,
-    Opened
+    Opened,
+    Inactive
 }

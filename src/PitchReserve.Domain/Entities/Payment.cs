@@ -35,6 +35,7 @@ public class Payment : BaseEntity
         {
             BookingId = bookingId,
             Amount = amount,
+            Currency = Currency.EGP,
             Method = method,
             Status = PaymentStatus.Pending,
             StripeSessionId = stripeSessionId

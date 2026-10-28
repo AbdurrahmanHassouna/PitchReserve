@@ -20,8 +20,9 @@ public class Playground : BaseEntity
     public decimal AverageRating { get; private set; } = 0;
     public int TotalRatings { get; private set; } = 0;
     public PlaygroundStatus Status { get; private set; }
+    public byte[] RowVersion { get; private set; } = Array.Empty<byte>();
 
-    public OwnerProfile OwnerProfile { get; private set; }
+    public OwnerProfile OwnerProfile { get; private set; } = null!;
     public ICollection<Booking> Bookings { get; private set; } = new List<Booking>();
     public ICollection<Review> Reviews { get; private set; } = new List<Review>();
 
@@ -56,9 +57,9 @@ public class Playground : BaseEntity
         if (string.IsNullOrWhiteSpace(address))
             throw new DomainException("Address is required.");
 
-        if(openHour - closeHour < TimeSpan.FromHours(1)
-           && closeHour - openHour < TimeSpan.FromHours(1))
-            throw new DomainException("Open hours must at least 1 hour.");
+        ValidateHours(openHour, closeHour);
+        if (status is not (PlaygroundStatus.Closed or PlaygroundStatus.Opened))
+            throw new DomainException("A new playground must be opened or closed.");
 
         return new Playground
         {
@@ -104,6 +105,8 @@ public class Playground : BaseEntity
         if (string.IsNullOrWhiteSpace(address))
             throw new DomainException("Address is required.");
 
+        ValidateHours(openHour, closeHour);
+
         Name = name.Trim();
         Size = size;
         SurfaceType = surfaceType;
@@ -115,27 +118,29 @@ public class Playground : BaseEntity
         Status = status;
         Latitude = latitude;
         Longitude = longitude;
-
     }
 
-    public void RecalculateRating(int newRating, int? oldRating = null)
+    public void SetRatingAggregate(int totalRatings, decimal averageRating)
     {
-        if (newRating < 1 || newRating > 5)
-            throw new DomainException("Rating must be between 1 and 5.");
+        if (totalRatings < 0)
+            throw new DomainException("Total ratings cannot be negative.");
+        if (totalRatings == 0)
+        {
+            TotalRatings = 0;
+            AverageRating = 0;
+            return;
+        }
+        if (averageRating is < 1 or > 5)
+            throw new DomainException("Average rating must be between 1 and 5.");
 
-        if (oldRating.HasValue)
-        {
-            if (TotalRatings > 0)
-            {
-                var totalScore = AverageRating * TotalRatings - oldRating.Value + newRating;
-                AverageRating = Math.Round(totalScore / TotalRatings, 2);
-            }
-        }
-        else
-        {
-            var totalScore = AverageRating * TotalRatings + newRating;
-            TotalRatings++;
-            AverageRating = Math.Round(totalScore / TotalRatings, 2);
-        }
+        TotalRatings = totalRatings;
+        AverageRating = Math.Round(averageRating, 2, MidpointRounding.AwayFromZero);
     }
+
+    private static void ValidateHours(TimeOnly openHour, TimeOnly closeHour)
+    {
+        if (openHour == closeHour)
+            throw new DomainException("Open and close hours must be different.");
+    }
+
 }

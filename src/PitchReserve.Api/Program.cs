@@ -1,57 +1,47 @@
-using System.ComponentModel.DataAnnotations;
 using System.Reflection;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using PitchReserve.Api.Diagnostics;
+using PitchReserve.Api.Extensions;
 using PitchReserve.Api.Middleware;
-using PitchReserve.Api.Options;
 using PitchReserve.Api.Services;
+using PitchReserve.Api.Serialization;
 using PitchReserve.Application;
 using PitchReserve.Application.Common.Interfaces;
-using PitchReserve.Application.Common.Options;
 using PitchReserve.Infrastructure;
 using PitchReserve.Infrastructure.Authentication;
 using Serilog;
-using Serilog.Events;
 
-// Bootstrap logger captures startup/container initialization failures
+const string logOutputTemplate = "[{Timestamp:yyyy-MM-dd HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}";
+
+// Keep a console logger available while the host starts.
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
-    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
-    .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
-    .MinimumLevel.Override("Microsoft.Hosting.Lifetime", LogEventLevel.Information)
-    .MinimumLevel.Override("System", LogEventLevel.Warning)
-    .Enrich.FromLogContext()
-    .ApplyPitchReservePrivacyPolicies()
-    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .WriteTo.Console(outputTemplate: logOutputTemplate)
     .CreateBootstrapLogger();
-
-SafeSelfLog.Enable();
 
 try
 {
+    Directory.CreateDirectory("logs");
     var builder = WebApplication.CreateBuilder(args);
 
-    var logDropMonitor = new LogDropMonitor();
-    builder.Services.AddSingleton<ILogDropMonitor>(logDropMonitor);
-    builder.Services.AddHostedService<LogDropNotifierService>();
-
-    builder.Services.AddOptions<RequestLoggingOptions>()
-        .Bind(builder.Configuration.GetSection(RequestLoggingOptions.SectionName))
-        .ValidateDataAnnotations()
-        .ValidateOnStart();
-
-    builder.Services.AddOptions<ApplicationLoggingOptions>()
-        .Bind(builder.Configuration.GetSection(ApplicationLoggingOptions.SectionName))
-        .ValidateDataAnnotations()
-        .ValidateOnStart();
+    builder.Services.AddRateLimiting(builder.Configuration);
 
     builder.Host.UseSerilog((context, services, configuration) =>
     {
-        configuration.ConfigurePitchReserveLogging(context.Configuration, logDropMonitor);
+        configuration
+            .ReadFrom.Configuration(context.Configuration)
+            .Enrich.FromLogContext()
+            .WriteTo.Console(outputTemplate: logOutputTemplate)
+            .WriteTo.File(
+                "logs/pitchreserve-.log",
+                rollingInterval: RollingInterval.Day,
+                fileSizeLimitBytes: 10 * 1024 * 1024,
+                rollOnFileSizeLimit: true,
+                retainedFileCountLimit: 7,
+                outputTemplate: logOutputTemplate);
     });
 
     builder.Services.AddHttpContextAccessor();
@@ -63,7 +53,8 @@ try
     builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
     builder.Services.AddProblemDetails();
 
-    builder.Services.AddControllers();
+    builder.Services.AddControllers().AddJsonOptions(options =>
+        options.JsonSerializerOptions.Converters.Add(new ExplicitOffsetDateTimeConverter()));
 
     var jwt = builder.Configuration.GetSection("JWTSettings").Get<JWTSettings>()
               ?? throw new InvalidOperationException("JWT settings are not configured.");
@@ -132,8 +123,6 @@ try
 
     var app = builder.Build();
 
-    app.UseMiddleware<CorrelationContextMiddleware>();
-    app.UseMiddleware<RequestCompletionMiddleware>();
     app.UseExceptionHandler();
 
     if (app.Environment.IsDevelopment())
@@ -147,18 +136,26 @@ try
 
     app.UseHttpsRedirection();
     app.UseRouting();
+    app.UseSerilogRequestLogging();
 
     app.UseAuthentication();
-    app.UseMiddleware<UserContextLoggingMiddleware>();
+    app.UseRateLimiter();
     app.UseAuthorization();
 
     app.MapControllers();
 
     app.Run();
 }
+catch (HostAbortedException)
+{
+    // EF tooling intentionally stops the host after discovering its services.
+    throw;
+}
 catch (Exception ex)
 {
-    Log.Fatal("Host terminated unexpectedly with {ExceptionType}: {StackTrace}", ex.GetType().FullName, ex.StackTrace);
+    Log.Fatal("Host terminated unexpectedly with {ExceptionType}: {StackTrace}",
+        ex.GetType().FullName,
+        ex.StackTrace);
     Environment.ExitCode = 1;
 }
 finally

@@ -20,5 +20,6 @@ public record PlaygroundDto
     public TimeOnly CloseHour { get; init; }
     public decimal AverageRating { get; init; }
     public int TotalRatings { get; init; }
+    public PlaygroundStatus Status { get; init; }
     public DateTime CreatedAt { get; init; }
 }

@@ -1,5 +1,6 @@
 using FluentValidation;
 using PitchReserve.Domain.Enums;
+using PitchReserve.Application.Common.Validation;
 
 namespace PitchReserve.Application.Features.Users.Commands.RegisterUser;
 
@@ -20,8 +21,9 @@ public class RegisterUserCommandValidator : AbstractValidator<RegisterUserComman
             .NotEmpty().WithMessage("Password is required.")
             .MinimumLength(6).WithMessage("Password must be at least 6 characters.");
 
-        RuleFor(v => v.PhoneNumber).MinimumLength(3)
-            .WithMessage("Phone number must be at least 3 characters.");
+        RuleFor(v => v.PhoneNumber).Must(PhoneNumberRules.IsValid)
+            .When(v => !string.IsNullOrWhiteSpace(v.PhoneNumber))
+            .WithMessage("Provide an Egyptian mobile number, such as 01012345678 or +201012345678.");
 
         RuleFor(v => v.Role)
             .IsInEnum().Must(x=> x is UserRole.Player or UserRole.Owner).WithMessage("Role must be a valid user role.");

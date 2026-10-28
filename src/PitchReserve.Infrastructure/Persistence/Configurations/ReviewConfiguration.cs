@@ -21,6 +21,8 @@ public class ReviewConfiguration : IEntityTypeConfiguration<Review>
         builder.HasIndex(r => new { r.PlaygroundId, r.PlayerId })
             .IsUnique();
 
+        builder.HasIndex(r => new { r.PlaygroundId, r.CreatedAt, r.Id });
+
         builder.HasOne(r => r.Playground)
             .WithMany(p => p.Reviews)
             .HasForeignKey(r => r.PlaygroundId)

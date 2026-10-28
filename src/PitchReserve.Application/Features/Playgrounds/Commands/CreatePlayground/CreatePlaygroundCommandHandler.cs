@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using PitchReserve.Application.Common.Exceptions;
 using PitchReserve.Application.Common.Interfaces;
 using PitchReserve.Domain.Entities;
@@ -12,25 +13,27 @@ public class CreatePlaygroundCommandHandler : IRequestHandler<CreatePlaygroundCo
     private readonly IApplicationDbContext _context;
     private readonly ICacheService _cacheService;
     private readonly ICurrentUserService _currentUserService;
+    private readonly ILogger<CreatePlaygroundCommandHandler> _logger;
 
     public CreatePlaygroundCommandHandler(
         IApplicationDbContext context,
         ICacheService cacheService,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        ILogger<CreatePlaygroundCommandHandler> logger)
     {
         _context = context;
         _cacheService = cacheService;
         _currentUserService = currentUserService;
+        _logger = logger;
     }
 
     public async Task<Guid> Handle(CreatePlaygroundCommand request, CancellationToken cancellationToken)
     {
-        if(!_currentUserService.UserId.HasValue)
+        if (!_currentUserService.UserId.HasValue || _currentUserService.Role != "Owner")
             throw new ForbiddenAccessException("An Owner must be authenticated to create a playground.");
         var ownerProfile = await _context.OwnerProfiles
-            .FirstOrDefaultAsync(o => o.UserId == _currentUserService.UserId, cancellationToken);
-        if (ownerProfile is null||
-            _currentUserService.UserId != ownerProfile.UserId)
+            .FirstOrDefaultAsync(o => o.UserId == _currentUserService.UserId.Value, cancellationToken);
+        if (ownerProfile is null)
         {
             throw new ForbiddenAccessException("An Owner must be authenticated to create a playground.");
         }
@@ -52,9 +55,31 @@ public class CreatePlaygroundCommandHandler : IRequestHandler<CreatePlaygroundCo
         _context.Playgrounds.Add(playground);
         await _context.SaveChangesAsync(cancellationToken);
 
-        await _cacheService.RemoveByPrefixAsync("playgrounds", CancellationToken.None);
-        await _cacheService.RemoveByPrefixAsync("playground", CancellationToken.None);
+        await InvalidateFieldCachesAsync(playground.Id);
 
         return playground.Id;
+    }
+
+    private async Task InvalidateFieldCachesAsync(Guid playgroundId)
+    {
+        try
+        {
+            await _cacheService.RemoveByPrefixAsync("playgrounds", CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning("Playground list cache invalidation failed for {PlaygroundId} ({ExceptionType}).",
+                playgroundId, exception.GetType().Name);
+        }
+
+        try
+        {
+            await _cacheService.RemoveAsync($"playground:{playgroundId}", CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning("Playground detail cache invalidation failed for {PlaygroundId} ({ExceptionType}).",
+                playgroundId, exception.GetType().Name);
+        }
     }
 }

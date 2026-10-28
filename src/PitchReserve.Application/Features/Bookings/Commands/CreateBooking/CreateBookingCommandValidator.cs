@@ -1,4 +1,5 @@
 using FluentValidation;
+using PitchReserve.Domain.Enums;
 
 namespace PitchReserve.Application.Features.Bookings.Commands.CreateBooking;
 
@@ -6,22 +7,23 @@ public class CreateBookingCommandValidator : AbstractValidator<CreateBookingComm
 {
     public CreateBookingCommandValidator()
     {
-        RuleFor(x => x.PlaygroundId)
-            .NotEmpty().WithMessage("Playground ID is required.");
+        RuleFor(command => command.PlaygroundId)
+            .NotEmpty().WithMessage("Field ID is required.");
 
-        RuleFor(x => x.OrganizerPlayerId)
-            .NotEmpty().WithMessage("Organizer player ID is required.");
+        RuleFor(command => command.StartTime)
+            .NotEmpty().WithMessage("Start time is required.");
 
-        RuleFor(x => x.StartTime)
-            .NotEmpty().WithMessage("Start time is required.")
-            .Must(t=> t.Minute==0 && t.Second==0).WithMessage("Booking must be Hour based no fractional minutes.")
-            .LessThan(x => x.EndTime).WithMessage("Start time must be earlier than end time.");
+        RuleFor(command => command.EndTime)
+            .NotEmpty().WithMessage("End time is required.")
+            .GreaterThan(command => command.StartTime)
+            .WithMessage("End time must be after start time.");
 
-        RuleFor(x => x.PaymentMethod)
-            .IsInEnum().WithMessage("A valid payment Method must be specified.");
+        RuleFor(command => command.PaymentMethod)
+            .Equal(PaymentMethod.CashOnArrival)
+            .WithMessage("Only cash on arrival is available for new bookings.");
 
-        RuleFor(x => x.MaxPlayersNeeded)
-            .GreaterThan(0).When(x => x.IsOpenForPublicPlayers)
-            .WithMessage("Max players needed must be greater than zero when open for public players.");
+        RuleFor(command => command.MaxPlayersNeeded)
+            .GreaterThan(0).When(command => command.IsOpenForPublicPlayers)
+            .WithMessage("Total match capacity must include at least the organizer.");
     }
 }

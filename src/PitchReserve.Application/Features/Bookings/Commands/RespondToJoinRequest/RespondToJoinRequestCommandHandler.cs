@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using PitchReserve.Application.Common.Exceptions;
 using PitchReserve.Application.Common.Interfaces;
 using PitchReserve.Application.Common.Models;
+using PitchReserve.Application.Features.Bookings.Common;
 using PitchReserve.Domain.Entities;
 using PitchReserve.Domain.Enums;
 using PitchReserve.Domain.Exceptions;
@@ -14,97 +15,91 @@ public class RespondToJoinRequestCommandHandler : IRequestHandler<RespondToJoinR
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IDateTimeProvider _dateTimeProvider;
     private readonly ICacheService _cacheService;
     private readonly ILogger<RespondToJoinRequestCommandHandler> _logger;
 
     public RespondToJoinRequestCommandHandler(
         IApplicationDbContext context,
         ICurrentUserService currentUserService,
+        IDateTimeProvider dateTimeProvider,
         ICacheService cacheService,
         ILogger<RespondToJoinRequestCommandHandler> logger)
     {
         _context = context;
         _currentUserService = currentUserService;
+        _dateTimeProvider = dateTimeProvider;
         _cacheService = cacheService;
         _logger = logger;
     }
 
     public async Task<Result> Handle(RespondToJoinRequestCommand request, CancellationToken cancellationToken)
     {
-        if (!_currentUserService.UserId.HasValue)
+        var organizerId = RequireCurrentPlayer();
+
+        var booking = await _context.Bookings
+            .Include(item => item.MatchParticipants)
+            .FirstOrDefaultAsync(item => item.Id == request.BookingId, cancellationToken);
+        if (booking is null)
+            throw new NotFoundException(nameof(Booking), request.BookingId);
+
+        if (booking.OrganizerPlayerId != organizerId)
+            throw new ForbiddenAccessException("Only the match organizer can respond to join requests.");
+
+        var now = _dateTimeProvider.UtcNow;
+        EnsureMatchIsEligible(booking, now);
+
+        var participant = booking.MatchParticipants
+            .FirstOrDefault(item => item.Id == request.ParticipantId);
+        if (participant is null)
+            throw new NotFoundException(nameof(MatchParticipant), request.ParticipantId);
+
+        if (request.Accept)
         {
-            throw new ForbiddenAccessException("User must be authenticated to respond to join requests.");
-        }
-
-        var key = $"lock:booking:{request.BookingId}";
-        var token = Guid.NewGuid().ToString("N");
-        var acquired = await _cacheService.TryAcquireLockAsync(
-            key, token, TimeSpan.FromSeconds(15), cancellationToken);
-
-        if (!acquired)
-        {
-            throw new SynchronousAccessException("This booking is being updated. Try again.");
-        }
-
-        try
-        {
-            var booking = await _context.Bookings
-                .Include(b => b.Playground)
-                    .ThenInclude(p => p.OwnerProfile)
-                .Include(b => b.MatchParticipants)
-                .FirstOrDefaultAsync(b => b.Id == request.BookingId, cancellationToken);
-
-            if (booking is null)
+            if (participant.Status == ParticipantStatus.Pending)
             {
-                throw new NotFoundException(nameof(Booking), request.BookingId);
-            }
-            var isOrganizer = booking.OrganizerPlayerId == _currentUserService.UserId;
-            if (!isOrganizer)
-            {
-                throw new ForbiddenAccessException("Only the match organizer or pitch owner can respond to join requests.");
-            }
-
-            var participant = booking.MatchParticipants
-                .FirstOrDefault(m => m.Id == request.ParticipantId);
-
-            if (participant is null)
-            {
-                throw new NotFoundException(nameof(MatchParticipant), request.ParticipantId);
-            }
-
-            if (request.Accept)
-            {
-                if(participant.Status == ParticipantStatus.Pending)
-                    booking.IncrementMatchParticipant();
+                booking.AddAcceptedParticipant(now);
                 participant.Accept();
-
+                await _context.SaveChangesAsync(cancellationToken);
             }
-            else
+            else if (participant.Status != ParticipantStatus.Joined)
             {
-                participant.Decline();
+                throw new ConflictException("Only a pending request can be accepted.");
             }
-
-            await _context.SaveChangesAsync(cancellationToken);
-            await _cacheService.RemoveByPrefixAsync("bookings", CancellationToken.None);
-
-            return Result.Success();
         }
-        finally
+        else if (participant.Status == ParticipantStatus.Pending)
         {
-            try
-            {
-                var released = await _cacheService.ReleaseLockAsync(key, token, CancellationToken.None);
-                if (!released)
-                {
-                    _logger.LogWarning("Redis lease for booking {BookingId} was no longer owned during release.",
-                        request.BookingId);
-                }
-            }
-            catch (Exception exception)
-            {
-                _logger.LogError("Failed to release Redis lease for booking {BookingId} with {ExceptionType}: {StackTrace}",
-                    request.BookingId, exception.GetType().FullName, exception.StackTrace);
-            }
+            participant.Decline();
+            await _context.SaveChangesAsync(cancellationToken);
         }
+        else if (participant.Status != ParticipantStatus.Declined)
+        {
+            throw new ConflictException("Only a pending request can be declined.");
+        }
+
+        await BookingCacheInvalidator.InvalidateAsync(_cacheService, _logger);
+        return Result.Success();
+    }
+
+    private Guid RequireCurrentPlayer()
+    {
+        if (!_currentUserService.UserId.HasValue || !_currentUserService.IsAuthenticated)
+            throw new ForbiddenAccessException("Authentication is required to respond to join requests.");
+        if (!string.Equals(_currentUserService.Role, nameof(UserRole.Player), StringComparison.OrdinalIgnoreCase))
+            throw new ForbiddenAccessException("Only player accounts can decide match requests.");
+
+        return _currentUserService.UserId.Value;
+    }
+
+    private static void EnsureMatchIsEligible(Booking booking, DateTime now)
+    {
+        if (!booking.IsOpenForPublicPlayers || !booking.MaxPlayersNeeded.HasValue)
+            throw new ConflictException("This booking is private.");
+        if (booking.Status == BookingStatus.Cancelled)
+            throw new ConflictException("This match is no longer accepting participant decisions.");
+        if (booking.Status != BookingStatus.AcceptedAwaitingCash && booking.Status != BookingStatus.Confirmed)
+            throw new ConflictException("The field owner must accept this booking before participant requests can be decided.");
+        if (booking.StartTime <= now || booking.ExpiresAt.HasValue && booking.ExpiresAt.Value <= now)
+            throw new ConflictException("This match is no longer accepting participant decisions.");
     }
 }
