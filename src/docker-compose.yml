@@ -1,0 +1,65 @@
+﻿
+services:
+  api:
+    build:
+      context: .
+      dockerfile: PitchReserve.Api/Dockerfile
+    container_name: pitchreserve-api
+    ports:
+      - "5000:8080"
+
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=PitchReserveDb;User Id=sa;Password=AHd9143673@AH;trustServerCertificate=True;
+      - Redis__ConnectionString=redis:6379
+    depends_on:
+      - sqlserver
+      - redis
+    networks:
+      - pitchreserve-network
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: pitchreserve-sqlserver
+    restart: unless-stopped
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=AHd9143673@AH
+      - MSSQL_PID=Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - pitchreserve_sql_data:/var/opt/mssql
+    networks:
+      - pitchreserve-network
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'AHd9143673@AH' -C -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  redis:
+    image: redis:7-alpine
+    container_name: pitchreserve-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - pitchreserve_redis_data:/data
+    networks:
+      - pitchreserve-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+networks:
+  pitchreserve-network:
+    driver: bridge
+
+volumes:
+  pitchreserve_sql_data:
+    name: pitchreserve_sql_data
+  pitchreserve_redis_data:
+    name: pitchreserve_redis_data
